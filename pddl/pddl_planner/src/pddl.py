@@ -72,7 +72,16 @@ class PDDLPlannerActionServer(object):
     def parse_pddl_result_lpg(self, output):
         rospy.loginfo(output)
         #dirty implementation
-        
+        duration_before_after = output.split("action Duration")
+        if len(duration_before_after) == 2:
+            results = [y.group(0)
+                       for y in [re.search("\([^\)]+\)", x)
+                                 for x in duration_before_after[1].split("Solution number")[0].split("\n")[1:]]
+                       if y != None]
+            rospy.loginfo("result => %s" % results)
+            return results
+        else:
+            return False
 
     def parse_pddl_result_downward(self, path_name):
         plan_path = path_name
@@ -123,10 +132,9 @@ class PDDLPlannerActionServer(object):
                 return False
 
         elif self._planner_name == "lpg":
-            rospy.loginfo (commands.getoutput ("pwd"))
             # temporary
             output = commands.getoutput("cd /home/h-kamada/ros/hydro/src/jsk-ros-pkg/euslib/demo/h-kamada/pddl; ./exec.sh")
-            return self.parse_pddl_result(output)
+            return self.parse_pddl_result_lpg(output)
 
         else:
             rospy.logfatal("set invalid planner: %s !" % self._planner_name)
