@@ -47,7 +47,9 @@
     (when optimize-state
       (let ((intersect-condition (reduce #'(lambda(x y) (intersection x y :test #'equal)) step-state)))
         (setq step-state (mapcar #'(lambda(x) (set-differece x intersect-condition)) step-state))))
-
+    (ros::ros-info "result:~A" result)
+    (ros::ros-info "step-state:~A" step-state)
+    (ros::ros-info "state:~A" state)
     (push (cons :step-state step-state) result)
     (push (cons :state state) result)
     result))
