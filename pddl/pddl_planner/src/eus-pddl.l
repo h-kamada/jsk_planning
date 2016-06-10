@@ -111,7 +111,9 @@
           constants
           predicates
           functions
-          action)
+          action
+          durative-action
+          )
   )
 (defmethod pddl-domain
   (:init (&key (name nil) ((:requirements req) nil) (file nil))
@@ -140,19 +142,24 @@
   (:action (&optional ac)
     (if ac (setq action ac))
     action)
+  (:durative-action (&optional dac)
+    (if dac (setq durative-action ac))
+    durative-action)
   (:add (&key
          ((:requirements req) nil)
          ((:types typ) nil)
          ((:constants con) nil)
          ((:predicates pre) nil)
          ((:functions fnc) nil)
-         ((:action ac) nil))
+         ((:action ac) nil)
+         ((:durative-action dac) nil))
     (if req (setq requirements (append requirements (list req))))
     (if typ (setq types        (append types        (list typ))))
     (if con (setq constants    (append constants    (list con))))
     (if pre (setq predicates   (append predicates   (list pre))))
     (if fnc (setq functions    (append functions    (list fnc))))
     (if ac  (setq action       (append action       (list ac))))
+    (if dac (setq durative-action (append durative-action (list dac))))
     self)
   (:domain-sexp ()
     `(define (domain ,domain-name)
@@ -162,6 +169,7 @@
        (:predicates ,@predicates)
        (:functions ,@functions)
        ,@(send-all action :action-sexp)
+       ,@(send-all durative-action :durative-action-sexp)
        ))
   (:print ()
     (pprint (send self :domain-sexp)))
@@ -186,8 +194,15 @@
 (append (list (car predicates))
         (mapcar #'(lambda (x) (if (= (length x) 1) (list (car x)) (append (butlast x) '(-) (last x)))) (cdr predicates)))
 |#
-              :actions (send-all action :ros-message)))
+              :actions
+              (cond
+               (action
+                (send-all action :ros-message))
+               (t
+                (send-all durative-action :ros-message)))
+              ))
   )
+
 
 (defclass pddl-action
   :super pddl-module
@@ -251,6 +266,79 @@
                 "()")
               :precondition
               (format nil "~A" `(and ,@precondition))
+              :effect
+              (format nil "~A" `(and ,@effect))))
+  )
+
+(defclass pddl-durative-action
+  :super pddl-module
+  :slots (name
+          parameters
+          duration
+          condition
+          effect)
+  )
+(defmethod pddl-durative-action
+  (:init (&key ((:name n) nil)
+               ((:parameters par) nil)
+               ((:duration dur) nil)
+               ((:condition condi) nil)
+               ((:effect ef) nil))
+    (if n (setq name n))
+    (if par (setq parameters par))
+    (if dur (setq duration dur))
+    (if condi (setq condition condi))
+    (if ef (setq effect ef))
+    self)
+  (:name (&optional n)
+    (if n (setq name n))
+    name)
+  (:parameters (&optional par)  ;;; (?obj0 - type0 ?obj1 - type1) -> ((?obj0 type0) (?obj1 type1))
+                                ;;; (?obj0 ?obj1 - type0 ?obj2 - type1) -> ((?obj ?obj type) (?obj2 type1))
+                                ;;; (?obj0 ?obj1) -> ((?obj0) (?obj1))
+    (if par (setq parameters par))
+    parameters)
+  (:duration (&optional dur)
+    (if dur (setq duration dur))
+    duration)
+  (:condition (&optional condi)
+    (if condi (setq condition condi))
+    condition)
+  (:effect (&optional ef)
+    (if ef (setq effect ef))
+    effect)
+  (:add (&key ((:effect ef) nil)
+              ((:parameters par) nil)
+              ((:condition condi) nil)
+              )
+    (if ef  (setq effect       (append effect       (list ef))))
+    (if par (setq parameters   (append parameters   (list par))))
+    (if condi (setq condition  (append condition    (list condi))))
+    self)
+  (:durative-action-sexp ()
+    `(:durative-action ,name
+       :parameters ,(flatten (mapcar #'(lambda (x)
+                                         (if (= (length x) 1)
+                                             (list (car x))
+                                           (append (butlast x) '(-) (last x))))
+                                     parameters))
+       :duration ,@duration
+       :condition (and ,@condition)
+       :effect (and ,@effect)))
+  (:ros-message ()
+    (instance pddl_msgs::PDDLAction :init
+              :name (string name)
+              :parameters
+              (if parameters
+                  (list->simple-string
+                   (list (flatten (mapcar #'(lambda (x)
+                                              (if (= (length x) 1)
+                                                  (list (car x))
+                                                (append (butlast x) '(-) (last x))))
+                                          parameters))))
+                "()")
+              :precondition
+              (format nil "~A" `(and ,@condition))
               :effect
               (format nil "~A" `(and ,@effect))))
   )
