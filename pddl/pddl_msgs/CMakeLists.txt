@@ -5,11 +5,11 @@ find_package(catkin REQUIRED COMPONENTS actionlib actionlib_msgs message_generat
 
 add_action_files(
   DIRECTORY action
-  FILES PDDLPlanner.action
+  FILES PDDLPlanner.action PDDLDurativePlanner.action
 )
 add_message_files(
   DIRECTORY msg
-  FILES PDDLAction.msg PDDLDomain.msg PDDLProblem.msg PDDLActionArray.msg PDDLObject.msg PDDLStep.msg
+  FILES PDDLAction.msg PDDLDurativeAction.msg PDDLDomain.msg PDDLDurativeDomain.msg PDDLProblem.msg PDDLActionArray.msg PDDLDurativeActionArray.msg PDDLObject.msg PDDLStep.msg
 )
 
 generate_messages(
