@@ -33,6 +33,8 @@ class PDDLPlannerActionServer(object):
         (problem_path, domain_path) = self.gen_tmp_pddl_file(problem, domain)
         rospy.loginfo("problem_path => %s" % problem_path)
         rospy.loginfo("domain_path => %s" % domain_path)
+        # rospy.loginfo ("problem:%s" % problem)
+        # rospy.loginfo ("domain:%s" % domain)
         result = self.call_pddl_planner(problem_path, domain_path)
         if result:
             self._result.sequence = [PDDLStep(action = x.split(' ')[0],
@@ -133,7 +135,8 @@ class PDDLPlannerActionServer(object):
 
         elif self._planner_name == "lpg":
             # temporary
-            output = commands.getoutput("cd /home/h-kamada/ros/hydro/src/jsk-ros-pkg/euslib/demo/h-kamada/pddl; ./exec.sh")
+            rospy.loginfo ("lpg")
+            output = commands.getoutput("cd /home/h-kamada/ros/hydro/src/jsk-ros-pkg/euslib/demo/h-kamada/pddl; ./LPG-1.2-linux/lpg-1.2 -o %s -f %s -n 2 -out result -restarts 3 -nobestfirst -search_steps 50 -i_choice 2" % (domain, problem))
             return self.parse_pddl_result_lpg(output)
 
         else:
@@ -141,9 +144,15 @@ class PDDLPlannerActionServer(object):
             return
 
     def gen_tmp_pddl_file(self, problem, domain):
-        problem_file = self.gen_tmp_problem_pddl_file(problem)
-        domain_file = self.gen_tmp_domain_pddl_file(domain)
-        return (problem_file, domain_file)
+        search_durative = re.search("durative", domain.requirements)
+        if search_durative == None:
+            problem_file = self.gen_tmp_problem_pddl_file(problem)
+            domain_file = self.gen_tmp_domain_pddl_file(domain)
+            return (problem_file, domain_file)
+        else:
+            problem_file = self.gen_tmp_problem_pddl_file(problem)
+            domain_file = self.gen_tmp_durative_domain_pddl_file(domain)
+            return (problem_file, domain_file)
     def gen_problem_objects_strings(self, objects):
         # objects = list of PDDLObject
         # PDDLObject has name and type
@@ -177,6 +186,7 @@ class PDDLPlannerActionServer(object):
             path.write("""(:metric %s)""" % problem.metric)
         path.write(""")""")
         return path_name
+
     def gen_tmp_domain_pddl_file(self, domain):
         (fd, path_name) = tempfile.mkstemp(text=True, prefix='domain_')
         path = os.fdopen(fd, 'w')
@@ -204,6 +214,39 @@ class PDDLPlannerActionServer(object):
             path.write("(:action %s\n" % action.name)
             path.write(":parameters %s\n" % action.parameters)
             path.write(":precondition %s\n" % action.precondition)
+            path.write(":effect %s\n" % action.effect)
+            path.write(")\n")               # (:action
+        path.write(")\n")               # (define
+        return path_name
+    
+    def gen_tmp_durative_domain_pddl_file(self, domain):
+        rospy.loginfo("domain.actions:%s" % domain.actions)
+        (fd, path_name) = tempfile.mkstemp(text=True, prefix='domain_')
+        path = os.fdopen(fd, 'w')
+        path.write("(define (domain %s)\n" % domain.name)
+        path.write("(:requirements %s)\n" % domain.requirements)
+        path.write("(:types \n")
+        for i in domain.types:
+            path.write(i + " ")
+        path.write(")\n")
+        if len(domain.constants) > 0:
+            path.write("(:constants \n")
+            for i in domain.constants:
+                path.write(i + " ")
+            path.write(")\n")
+        path.write("(:predicates\n")
+        for i in domain.predicates:
+            path.write(i + " ")
+        path.write(")\n")
+        if domain.functions:
+            path.write("(:functions\n")
+            for i in domain.functions:
+                path.write(i + " ")
+            path.write(")\n")
+        for action in domain.actions:
+            path.write("(:durative-action %s\n" % action.name)
+            path.write(":parameters %s\n" % action.parameters)
+            path.write(":condition %s\n" % action.precondition)
             path.write(":effect %s\n" % action.effect)
             path.write(")\n")               # (:action
         path.write(")\n")               # (define

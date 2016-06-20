@@ -13,17 +13,28 @@
       (instance ros::simple-action-client :init
                 "pddl_planner" pddl_msgs::PDDLPlannerAction))
 
-(defun pddl-planning (domain problem &key (client *action-client*) (debug))
+(defun pddl-planning (domain problem &key (client *action-client*) (debug) (durative nil))
   (let (plan ret)
     (warning-message 1 "waiting pddl_planner~%")
     (send client :wait-for-server)
     (warning-message 1 "get actionlib server~%")
-    (let ((goal (instance pddl_msgs::PDDLPlannerActionGoal :init)))
-      (send goal :goal :domain (send domain :ros-message))
-      (send goal :goal :problem (send problem :ros-message))
-      (send client :send-goal goal)
-      (warning-message 1 "sent goal~%"))
-
+    (cond
+     (durative
+      (let ((goal (instance pddl_msgs::PDDLDurativePlannerActionGoal :init)))
+        (ros::ros-info "domain ros-message:~A" (print-ros-msg (send domain :ros-message)))
+        (send goal :goal :domain (send domain :ros-message))
+        (send goal :goal :problem (send problem :ros-message))
+        (send client :send-goal goal)
+        (warning-message 1 "sent goal~%")
+        ))
+     (t
+      (let ((goal (instance pddl_msgs::PDDLPlannerActionGoal :init)))
+        (ros::ros-info "domain ros-message:~A" (print-ros-msg (send domain :ros-message)))
+        (send goal :goal :domain (send domain :ros-message))
+        (send goal :goal :problem (send problem :ros-message))
+        (send client :send-goal goal)
+        (warning-message 1 "sent goal~%")
+        )))
     (warning-message 1 "waiting goal...~%")
     (send client :wait-for-result)
 
@@ -38,9 +49,9 @@
       (setq ret (append ret (list (cons :plan plan)))))
     ret))
 
-(defun solve-pddl-planning (domain problem &key (client *action-client*) (debug)
+(defun solve-pddl-planning (domain problem &key (client *action-client*) (debug) (durative nil)
                                    (optimize-state nil))
-  (let* ((result (pddl-planning domain problem :client client :debug debug))
+  (let* ((result (pddl-planning domain problem :client client :debug debug :durative durative))
          (state (instance pddl-state :init :domain domain :initial-state (send problem :initial-condition) :actions (cdr (assoc :plan result)) :objects (send problem :objects)))
          (step-state (send state :generate-states)))
 
