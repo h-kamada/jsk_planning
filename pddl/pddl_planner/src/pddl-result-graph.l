@@ -84,6 +84,8 @@
 (defun make-graph-from-pddl-results (results &key ((:graph gr) (instance pddl-graph :init)) (node-name))
   (if (symbolp (caar results)) (setq results (list results)))
 
+  (ros::ros-info "[make-graph] results:~A" results)
+  ;; (((:state . #<pddl-state #X69a32a0>) (:step-state ((clear pole2) (clear pole1) (can-be-on disk1 disk2) (can-be-on disk0 disk1) (on disk2 pole0) (on disk1 disk2) (on disk0 disk1) (clear disk0) (can-be-on disk0 pole0) (can-be-on disk0 pole1) (can-be-on disk0 pole2) (can-be-on disk1 pole0) (can-be-on disk1 pole1) (can-be-on disk1 pole2) (can-be-on disk2 pole0) (can-be-on disk2 pole1) (can-be-on disk2 pole2)) ((clear pole1) (can-be-on disk1 disk2) (can-be-on disk0 disk1) (on disk2 pole0) (on disk1 disk2) (clear disk0) (can-be-on disk0 pole0) (can-be-on disk0 pole1) (can-be-on disk0 pole2) (can-be-on disk1 pole0) (can-be-on disk1 pole1) (can-be-on disk1 pole2) (can-be-on disk2 pole0) (can-be-on disk2 pole1) (can-be-on disk2 pole2) (on disk0 pole2) (clear disk1)) ((can-be-on disk1 disk2) (can-be-on disk0 disk1) (on disk2 pole0) (clear disk0) (can-be-on disk0 pole0) (can-be-on disk0 pole1) (can-be-on disk0 pole2) (can-be-on disk1 pole0) (can-be-on disk1 pole1) (can-be-on disk1 pole2) (can-be-on disk2 pole0) (can-be-on disk2 pole1) (can-be-on disk2 pole2) (on disk0 pole2) (clear disk1) (on disk1 pole1) (clear disk2)) ((can-be-on disk1 disk2) (can-be-on disk0 disk1) (on disk2 pole0) (clear disk0) (can-be-on disk0 pole0) (can-be-on disk0 pole1) (can-be-on disk0 pole2) (can-be-on disk1 pole0) (can-be-on disk1 pole1) (can-be-on disk1 pole2) (can-be-on disk2 pole0) (can-be-on disk2 pole1) (can-be-on disk2 pole2) (on disk1 pole1) (clear disk2) (on disk0 disk1) (clear pole2)) ((can-be-on disk1 disk2) (can-be-on disk0 disk1) (clear disk0) (can-be-on disk0 pole0) (can-be-on disk0 pole1) (can-be-on disk0 pole2) (can-be-on disk1 pole0) (can-be-on disk1 pole1) (can-be-on disk1 pole2) (can-be-on disk2 pole0) (can-be-on disk2 pole1) (can-be-on disk2 pole2) (on disk1 pole1) (clear disk2) (on disk0 disk1) (on disk2 pole2) (clear pole0)) ((can-be-on disk1 disk2) (can-be-on disk0 disk1) (clear disk0) (can-be-on disk0 pole0) (can-be-on disk0 pole1) (can-be-on disk0 pole2) (can-be-on disk1 pole0) (can-be-on disk1 pole1) (can-be-on disk1 pole2) (can-be-on disk2 pole0) (can-be-on disk2 pole1) (can-be-on disk2 pole2) (on disk1 pole1) (clear disk2) (on disk2 pole2) (on disk0 pole0) (clear disk1)) ((can-be-on disk1 disk2) (can-be-on disk0 disk1) (clear disk0) (can-be-on disk0 pole0) (can-be-on disk0 pole1) (can-be-on disk0 pole2) (can-be-on disk1 pole0) (can-be-on disk1 pole1) (can-be-on disk1 pole2) (can-be-on disk2 pole0) (can-be-on disk2 pole1) (can-be-on disk2 pole2) (on disk2 pole2) (on disk0 pole0) (clear disk1) (on disk1 disk2) (clear pole1)) ((can-be-on disk1 disk2) (can-be-on disk0 disk1) (clear disk0) (can-be-on disk0 pole0) (can-be-on disk0 pole1) (can-be-on disk0 pole2) (can-be-on disk1 pole0) (can-be-on disk1 pole1) (can-be-on disk1 pole2) (can-be-on disk2 pole0) (can-be-on disk2 pole1) (can-be-on disk2 pole2) (on disk2 pole2) (on disk1 disk2) (clear pole1) (on disk0 disk1) (clear pole0))) (:plan (move disk0 disk1 pole2) (move disk1 disk2 pole1) (move disk0 pole2 disk1) (move disk2 pole0 pole2) (move disk0 disk1 pole0) (move disk1 pole1 disk2) (move disk0 pole0 disk1))))
   (let (node-pool (cntr 0))
     (dolist (res results)
       ;; sort
@@ -91,11 +93,27 @@
         (sort-condition l))
 
       (let (nd ns (plan (cdr (assoc :plan res))))
+        (when t;(durative)
+          (let (tmp-plan)
+            (dolist (pp plan)
+              ;; (0.0 20.0 move robot2 init-pos fridge-front)
+              (setq *ppp* pp)
+              (ros::ros-info "pp:~A" pp)
+              (ros::ros-info "[make-graph] ~A-~A ~A"  (caaddr pp) (cadr pp ) (cdaddr pp))
+;              (setq tmp-plan (list (read-from-string (format nil "~A-~A ~A" (caaddr pp) (cadr pp) (cdaddr pp)))))
+;              (setq tmp-plan (format nil "~A ~A ~A" (caaddr pp) (cadr pp) (cdaddr pp)))
+              (setq tmp-plan (append tmp-plan (list (format nil "~A" (append (list (read-from-string (format nil "~A-~A" (caaddr pp) (cadr pp)))) (cdaddr pp))))))
+;              (setq tmp-plan (list (read-from-string (format nil "~A" pp))))
+              ;; (setq tmp-plan (append tmp-plan (list (read-from-string (format nil "~A-~A ~A" (caaddr pp) (cadr pp) `,(cdaddr pp))))))
+              (ros::ros-info "tmp-plan:~A" tmp-plan)
+              (setq plan tmp-plan)
+              )))
         (dolist (l (cdr (assoc :step-state res)))
           ;; add node
           (setq nd (send gr :add-pddl-state-node l :node-name node-name))
           ;; add arc
           (when (and nd ns)
+            (ros::ros-info "ns:~A nd:~A (car plan):~A" ns nd (car plan))
             (send gr :add-arc-from-to ns nd (format nil "~A" (pop plan))))
           (setq ns nd nd nil)
           )))

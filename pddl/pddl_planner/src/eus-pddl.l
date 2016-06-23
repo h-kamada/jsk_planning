@@ -115,9 +115,10 @@
           use-durative-action)
   )
 (defmethod pddl-domain
-  (:init (&key (name nil) ((:requirements req) nil) (file nil) (use-durative-action nil))
+  (:init (&key (name nil) ((:requirements req) nil) (file nil) (durative-action nil))
     (if name (setq domain-name name))
     (if req (setq requirements req))
+    (if durative-action (setq use-durative-action durative-action))
     self)
   (:name (&optional n)
     (if n (setq domain-name n))
@@ -142,7 +143,8 @@
     (if ac (setq action ac))
     action)
   (:use-durative-action (&optional use-dur)
-    (if use-dur (setq use-durative-action use-dur)))
+    (if use-dur (setq use-durative-action use-dur))
+    use-durative-action)
   (:add (&key
          ((:requirements req) nil)
          ((:types typ) nil)
@@ -337,7 +339,10 @@
           domain
           states
           actions
-          objects)
+          tl-actions
+          objects
+          use-durative-action
+          )
   )
 
 (defmethod pddl-state
@@ -349,6 +354,8 @@
                )
     (if n (setq name n))
     (send self :domain dm)
+    (when (send dm :use-durative-action)
+      (setq use-durative-action t))
     (send self :initial-state st)
     (if ac (setq actions ac))
     (send self :objects obj)
@@ -359,8 +366,13 @@
   (:domain (&optional dm)
     (when dm
       (setq domain dm)
+      (when (send dm :use-durative-action)
+        (setq use-durative-action t))
       (send self :add-constants))
     domain)
+  (:use-durative-action (&optional use-dur)
+    (if use-dur (setq use-durative-action use-dur))
+    use-durative-action)
   (:initial-state (&optional st)
     (when st
       (let (tmp-st)
@@ -402,37 +414,126 @@
       (setq actions (append actions (list ac)))
       (setq states (append states (list (send self :apply-action (car (last states)) ac)))))
     actions)
+  (:generate-timeline-actions ()
+    (let (tmp-actions)
+      (setq *ac* actions)
+      ;; (0.0 20.0 move robot1 init-pos cart-pos)
+ ;     (ros::ros-info "actions:~A" actions)
+      (dolist (ac actions)
+        (setq tmp-actions (append tmp-actions (list (list (car ac) 'start (cddr ac)))))
+        (setq tmp-actions (append tmp-actions (list (list (+ (car ac) (cadr ac)) 'end (cddr ac)))))
+        )
+;      (ros::ros-info "tmp-actions:~A" tmp-actions)
+      (setq tmp-actions (sort tmp-actions #'<= #'car))
+      (setq *tac* tmp-actions)
+      (setq tl-actions tmp-actions)
+      ;; (20.0 end (move robot1 init-pos cart-pos))
+      (ros::ros-info "tmp-actions:~A" tmp-actions)
+      ))
+
+  (:timeline-actions ()
+    tl-actions)
+
   (:generate-states ()
-    (when (and states actions)
-      (setq states (list (car states)))
-      (let ((tmp-st (car states)))
-        (dolist (act actions)
-          (setq tmp-st (send self :apply-action tmp-st act))
-          (push tmp-st states))
-        (setq states (nreverse states))))
+    (cond
+     ((send self :use-durative-action)
+      ;; aply action
+      (when (and states actions)
+        (setq states (list (car states)))
+        (let ((tmp-st (car states)))
+          (send self :generate-timeline-actions)
+          ;; tl-actions = ((0.0 start (move robot1 init-pos table-front)) * * *)
+          (dolist (act tl-actions)
+            (ros::ros-info "[generate-states] before tmp-st:~A act:~A" tmp-st act)
+            (setq tmp-st (send self :apply-action tmp-st act))
+            (ros::ros-info "[generate-states] after  tmp-st:~A act:~A" tmp-st act)
+            (push tmp-st states))
+          (setq states (nreverse states))
+          )))
+     (t
+      (when (and states actions)
+        (setq states (list (car states)))
+        (let ((tmp-st (car states)))
+          (dolist (act actions)
+            (setq tmp-st (send self :apply-action tmp-st act))
+            (push tmp-st states))
+          (setq states (nreverse states))))))
     )
   (:check-type ()
     ;;TODO
     )
   (:check-condition (st act)
-    (let ((action (find-if #'(lambda (x) (equal (car act) (intern (string-upcase (send x :name))))) (send domain :action)))
+    (let ((action (find-if #'(lambda (x)
+                               (equal
+                                (or
+                                 (and (send self :use-durative-action)
+                                      (caaddr act))
+                                 (car act))
+                                (intern (string-upcase (send x :name))))) (send domain :action)))
           param pcond)
       (unless action
         (return-from :check-condition nil))
-      (setq param (list (flatten (mapcar #'(lambda(x) (butlast x 1)) (send action :parameters))) (cdr act))
-            pcond (send action :precondition))
-      (null (some #'null
-                  (mapcar #'(lambda (p)
-                              (send self :check-state st p param))
-                          pcond)))
+      (cond
+       ((send self :use-durative-action)
+        (let (tmp-arg (cnt 0))
+          (dolist (para (car (send action :parameters)))
+            (when (eq 0 (mod cnt 3))
+              (setq tmp-arg (append tmp-arg (list para))))
+            (setq cnt (+ cnt 1))
+            )
+          (setq param (list tmp-arg (cdaddr act)))
+          ))
+       (t
+        (setq param (list (flatten (mapcar #'(lambda(x) (butlast x 1)) (send action :parameters))) (cdr act)))))
+      (setq pcond (send action :precondition))
+      (ros::ros-info "[check-condition] param:~A pcond:~A" param pcond)
+      ;; param:((?obj ?from ?to) (disk0 disk1 pole2))
+      ;; pcond:((clear ?obj) (clear ?to) (on ?obj ?from) (can-be-on ?obj ?to))
+      (cond
+       ((send self :use-durative-action)
+        (null (some #'null
+                    (mapcar #'(lambda (p)
+                                (ros::ros-info "[check-condition] (cadr act):~A p:~A member:~A"
+                                               (cadr act) p (or (member (cadr act) p) (member 'over p)))
+                                (cond
+                                 ((or (member (cadr act) p) (member 'over p))
+                                  (send self :check-state st p param))
+                                 (t
+                                  t)))
+                            pcond))))
+       (t
+        (null (some #'null
+                    (mapcar #'(lambda (p)
+                                (send self :check-state st p param))
+                            pcond)))
+        ))
       ))
   (:check-state (st s param)
-    (let ((ss (mapcar #'(lambda(x)
-                          (let ((pos (position x (car param))))
-                            (if pos
-                                (elt (cadr param) pos)
-                              x)))
-                      s)))
+    (let ((ss
+           (cond
+            ((send self :use-durative-action)
+             ;;
+             (setq *s* s)
+             (setq *pp* param)
+             (mapcar #'(lambda(x)
+                         (let ((pos (position x (car param))))
+                           (if pos
+                               (elt (cadr param) pos)
+                             x)))
+                     (caddr s))
+             )
+            (t
+             (mapcar #'(lambda(x)
+                         (let ((pos (position x (car param))))
+                           (if pos
+                               (elt (cadr param) pos)
+                             x)))
+                     s)))))
+      (ros::ros-info "[check-state] st:~A s:~A param:~A ss:~A" st s param ss)
+      ;; st:((clear pole2) (clear pole1) (can-be-on disk1 disk2) (can-be-on disk0 disk1) (on disk2 pole0) (on disk1 disk2) (on disk0 disk1) (clear disk0) (can-be-on disk0 pole0) (can-be-on disk0 pole1) (can-be-on disk0 pole2) (can-be-on disk1 pole0) (can-be-on disk1 pole1) (can-be-on disk1 pole2) (can-be-on disk2 pole0) (can-be-on disk2 pole1) (can-be-on disk2 pole2))
+      ;; s:(clear ?obj)
+      ;; param:((?obj ?from ?to) (disk0 disk1 pole2))
+      ;; ss:(clear disk0)
       (case (car ss)
         ('not
          (if (send self :check-state st (cadr ss) param)
@@ -482,25 +583,75 @@
       ))
   (:apply-action (st act)
     (if (send self :check-condition st act)
-        (let ((action (find-if #'(lambda (x) (equal (car act) (intern (string-upcase (send x :name))))) (send domain :action)))
+        (let ((action (find-if #'(lambda (x)
+                                   (equal
+                                    (or
+                                     (and (send self :use-durative-action)
+                                          (caaddr act))
+                                     (car act))
+                                    (intern (string-upcase (send x :name))))) (send domain :action)))
               param effect (tmp-st st))
           (unless action
             (return-from :apply-action nil))
-          (setq param (list (flatten (mapcar #'(lambda(x) (butlast x 1)) (send action :parameters))) (cdr act))
-                effect (send action :effect))
+          (cond
+           ((send self :use-durative-action)
+            (let (tmp-arg (cnt 0))
+              (dolist (para (car (send action :parameters)))
+                (when (eq 0 (mod cnt 3))
+                  (setq tmp-arg (append tmp-arg (list para))))
+                (setq cnt (+ cnt 1))
+                )
+              (setq param (list tmp-arg (cdaddr act)))
+              (ros::ros-info "[apply-action] param:~A" param)
+              ))
+           (t
+            (setq param (list (flatten (mapcar #'(lambda(x) (butlast x 1)) (send action :parameters))) (cdr act)))))
+          (setq effect (send action :effect))
+          (ros::ros-info "[apply-action] st:~A act:~A param:~A effect:~A" st act param effect)
+          ;; st:((clear pole2) (clear pole1) (can-be-on disk1 disk2) (can-be-on disk0 disk1) (on disk2 pole0) (on disk1 disk2) (on disk0 disk1) (clear disk0) (can-be-on disk0 pole0) (can-be-on disk0 pole1) (can-be-on disk0 pole2) (can-be-on disk1 pole0) (can-be-on disk1 pole1) (can-be-on disk1 pole2) (can-be-on disk2 pole0) (can-be-on disk2 pole1) (can-be-on disk2 pole2))
+          ;; act:(move disk0 disk1 pole2)
+          ;; param:((?obj ?from ?to) (disk0 disk1 pole2))
+          ;; effect:((on ?obj ?to) (not (on ?obj ?from)) (not (clear ?to)) (clear ?from))
           (dolist (e effect)
-            (setq tmp-st (send self :change-state tmp-st e param)))
+            (ros::ros-info "[apply-action] cadr act:~A e:~A" (cadr act) e)
+            (cond
+             ((send self :use-durative-action)
+              (when (member (cadr act) e)
+                (ros::ros-info "[apply-action] tmp-st:~A" tmp-st)
+                (ros::ros-info "[apply-action] e:~A param:~A" e param)
+                (setq tmp-st (send self :change-state tmp-st e param))
+                (ros::ros-info "[apply-action] tmp-st:~A" tmp-st)
+                ))
+             (t
+              (setq tmp-st (send self :change-state tmp-st e param))
+              )))
           tmp-st)
       nil)
     )
   (:change-state (st e param)
-    (let ((ee (mapcar #'(lambda(x)
-                          (let ((pos (position x (car param))))
-                            (if pos
-                                (elt (cadr param) pos)
-                              x)))
-                      e))
+    (let ((ee
+           (cond
+            ((send self :use-durative-action)
+             ;;
+             (mapcar #'(lambda(x)
+                         (let ((pos (position x (car param))))
+                           (if pos
+                               (elt (cadr param) pos)
+                             x)))
+                     (caddr e)))
+            (t
+             (mapcar #'(lambda(x)
+                         (let ((pos (position x (car param))))
+                           (if pos
+                               (elt (cadr param) pos)
+                             x)))
+                     e))))
           (tmp-st st))
+      (ros::ros-info "[change-state] st:~A e:~A param:~A ee:~A" st e param ee)
+      ;; st:((clear pole2) (clear pole1) (can-be-on disk1 disk2) (can-be-on disk0 disk1) (on disk2 pole0) (on disk1 disk2) (on disk0 disk1) (clear disk0) (can-be-on disk0 pole0) (can-be-on disk0 pole1) (can-be-on disk0 pole2) (can-be-on disk1 pole0) (can-be-on disk1 pole1) (can-be-on disk1 pole2) (can-be-on disk2 pole0) (can-be-on disk2 pole1) (can-be-on disk2 pole2))
+      ;; e:(on ?obj ?to)
+      ;; param:((?obj ?from ?to) (disk0 disk1 pole2))
+      ;; ee:(on disk0 pole2)
       (case (car ee)
         ('increase
          st)
