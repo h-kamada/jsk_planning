@@ -28,6 +28,7 @@
     (send client :wait-for-result)
 
     (when (send (send client :get-result) :sequence)
+      (setq *sequence* (send (send client :get-result) :sequence))
       (setq plan (mapcar #'(lambda (x)
                              (cons (read-from-string (remove #\( (send x :action)))
                                    (mapcar #'(lambda (y) (read-from-string (remove #\) y)))
@@ -48,6 +49,7 @@
       (let ((intersect-condition (reduce #'(lambda(x y) (intersection x y :test #'equal)) step-state)))
         (setq step-state (mapcar #'(lambda(x) (set-differece x intersect-condition)) step-state))))
 
+    (ros::ros-info "step-state:~A" step-state)
     (push (cons :step-state step-state) result)
     (push (cons :state state) result)
     result))

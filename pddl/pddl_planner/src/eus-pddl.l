@@ -337,7 +337,9 @@
           domain
           states
           actions
-          objects)
+          objects
+          use-durative-action
+          )
   )
 
 (defmethod pddl-state
@@ -349,6 +351,8 @@
                )
     (if n (setq name n))
     (send self :domain dm)
+    (when (send dm :use-durative-action)
+      (setq use-durative-action t))
     (send self :initial-state st)
     (if ac (setq actions ac))
     (send self :objects obj)
@@ -359,8 +363,13 @@
   (:domain (&optional dm)
     (when dm
       (setq domain dm)
+      (when (send dm :use-durative-action)
+        (setq use-durative-action t))
       (send self :add-constants))
     domain)
+  (:use-durative-action (&optional use-dur)
+    (if use-dur (setq use-durative-action use-dur))
+    use-durative-action)
   (:initial-state (&optional st)
     (when st
       (let (tmp-st)
@@ -403,13 +412,27 @@
       (setq states (append states (list (send self :apply-action (car (last states)) ac)))))
     actions)
   (:generate-states ()
-    (when (and states actions)
-      (setq states (list (car states)))
-      (let ((tmp-st (car states)))
-        (dolist (act actions)
-          (setq tmp-st (send self :apply-action tmp-st act))
-          (push tmp-st states))
-        (setq states (nreverse states))))
+    (cond
+     ((send self :use-durative-action)
+      ;; aply action
+      (when (and states actions)
+        (setq states (list (car states)))
+        (let ((tmp-st (car states)))
+          (send self :generate-timeline-actions)
+          (dolist (act tl-actions)
+            (setq tmp-st (send self :apply-durative-action tmp-st act))
+            (push tmp-st states))
+          (setq states (nreverse states))
+          ;; '( '(30.0 actionA end '((on a b) (at c d)))  '(30.0 actionB start '((on a b) (at c d))) )
+a          )))
+     (t
+      (when (and states actions)
+        (setq states (list (car states)))
+        (let ((tmp-st (car states)))
+          (dolist (act actions)
+            (setq tmp-st (send self :apply-action tmp-st act))
+            (push tmp-st states))
+          (setq states (nreverse states))))))
     )
   (:check-type ()
     ;;TODO
