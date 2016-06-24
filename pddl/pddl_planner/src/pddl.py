@@ -38,10 +38,12 @@ class PDDLPlannerActionServer(object):
             if self._planner_name == "lpg":
                 rospy.loginfo ("[execcb]:result:%s" % result)
                 self._result.sequence = [PDDLStep(action = x.split(' ')[1].lstrip("\("),
-                                                  args = re.search("\([^\)]+\)", x).group(0).lstrip("\(").rstrip("\)").split(' '),
-                                                  start_time = re.search("\[D[^\)]+;", x).group(0).lstrip("[D:").rstrip(";")
+                                                  args = re.search("\([^\)]+\)", x).group(0).lstrip("\(").rstrip("\)").split(' ')[1:],
+                                                  start_time = re.search("[0-9]+.[0-9]+:" , x).group(0).rstrip(":"),
+                                                  action_duration = re.search("\[D[^\)]+;", x).group(0).lstrip("[D:").rstrip(";")
                                                   )
                                          for x in result]
+                self._result.use_durative_action = True
                 rospy.loginfo("[exec_cb}:%s" % self._result.sequence)
             else:
                 self._result.sequence = [PDDLStep(action = x.split(' ')[0],
