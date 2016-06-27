@@ -431,6 +431,9 @@
       (ros::ros-info "tmp-actions:~A" tmp-actions)
       ))
 
+  (:timeline-actions ()
+    tl-actions)
+
   (:generate-states ()
     (cond
      ((send self :use-durative-action)
@@ -611,12 +614,17 @@
           ;; effect:((on ?obj ?to) (not (on ?obj ?from)) (not (clear ?to)) (clear ?from))
           (dolist (e effect)
             (ros::ros-info "[apply-action] cadr act:~A e:~A" (cadr act) e)
-            (when (member (cadr act) e)
-              (ros::ros-info "[apply-action] tmp-st:~A" tmp-st)
-              (ros::ros-info "[apply-action] e:~A param:~A" e param)
+            (cond
+             ((send self :use-durative-action)
+              (when (member (cadr act) e)
+                (ros::ros-info "[apply-action] tmp-st:~A" tmp-st)
+                (ros::ros-info "[apply-action] e:~A param:~A" e param)
+                (setq tmp-st (send self :change-state tmp-st e param))
+                (ros::ros-info "[apply-action] tmp-st:~A" tmp-st)
+                ))
+             (t
               (setq tmp-st (send self :change-state tmp-st e param))
-              (ros::ros-info "[apply-action] tmp-st:~A" tmp-st)
-              ))
+              )))
           tmp-st)
       nil)
     )

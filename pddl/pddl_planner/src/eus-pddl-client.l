@@ -66,6 +66,10 @@
         (setq step-state (mapcar #'(lambda(x) (set-differece x intersect-condition)) step-state))))
 
     (ros::ros-info "step-state:~A" step-state)
+    (ros::ros-info "timeline-actions : ~A" (send state :timeline-actions))
+    (when (send domain :use-durative-action)
+      ;; reset plan to the timeline-actions
+      (setq result (list (cons :plan  (send state :timeline-actions)))))
     (push (cons :step-state step-state) result)
     (push (cons :state state) result)
     result))
