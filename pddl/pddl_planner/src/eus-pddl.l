@@ -432,10 +432,12 @@
      ((send self :use-durative-action)
       (when (and states actions)
         (setq states (list (car states)))
-        (let ((tmp-st (car states)))
+        (let ((tmp-st (car states)) (cnt 0))
           (send self :generate-timeline-actions)
           (dolist (act tl-actions)
             (setq tmp-st (send self :apply-action tmp-st act))
+            (ros::ros-info "[genereate-states] tmp-st(~A):~A action:~A" cnt tmp-st act)
+            (setq cnt (+ cnt 1))
             (push tmp-st states))
           (setq states (nreverse states))
           )))
@@ -451,6 +453,101 @@
   (:check-type ()
     ;;TODO
     )
+
+  (:get-relationship ()
+    (let ((cnt 0) pcond action param st)
+      (unless (send self :use-durative-action)
+        (return-from :get-relationship nil))
+      (ros::ros-info "[get-relationship] [num] actions:~A states:~A" (length tl-actions) (length (send self :states)))
+      (dolist (ac tl-actions)
+        ;; (ros::ros-info "ac:~A" ac)
+        (when (member 'start ac)
+          (setq action (find-if #'(lambda (x)
+                                    (equal (caaddr ac) (read-from-string (send x :name))))
+                                (send domain :action)))
+          (setq pcond (send action :precondition))
+          (let (tmp-arg (cnt 0))
+            (dolist (para (car (send action :parameters)))
+              (when (eq 0 (mod cnt 3))
+                (setq tmp-arg (append tmp-arg (list para))))
+              (setq cnt (+ cnt 1))
+              )
+            (setq param (list tmp-arg (cdaddr ac)))
+            )
+          ;; (ros::ros-info "action:~A pcond:~A param:~A" action pcond param)
+          ;; (while t
+            ;; (ros::ros-info "st:~A" st)
+          (let ((ccnt 0) check-lst)
+            (while t
+              (setq st (elt (send self :states) (- cnt ccnt)))
+              (setq check-lst (mapcar #'(lambda (p)
+                                          (let (ret)
+                                            (setq ret
+                                                  (cond
+                                                   ((or (member (cadr ac) p) (member 'over p))
+                                                    (warning-message 4 "check-state(~A):~A~%" p (send self :check-state st p param))
+                                                    (send self :check-state st p param))
+                                                   (t t)))
+                                            (cond
+                                             ((null ret) ;; exists relationship
+                                              p)
+                                             (t nil))))
+                                      pcond))
+              (warning-message 4 "pcond:~A check-lst:~A~%" pcond check-lst)
+              (cond
+               ((equal st (car (send self :states))) ; initial state
+                (ros::ros-info "initial")
+                (return))
+               ((every #'null check-lst)
+                (warning-message 4 "[no relation]~%")
+                (warning-message 4  "action(~A):~A~%" cnt ac)
+                (warning-message 4 "|~%")
+                (warning-message 4 "state(~A):~A~%" (- cnt ccnt) (elt (send self :states) (- cnt ccnt)))
+                (warning-message 4 "condition:~A~%" check-lst)
+                (warning-message 4 "~%")
+                (warning-message 4 "~%")
+                (warning-message 4 "~%")
+                (warning-message 4 "~%")
+                ;; (ros::ros-info "no relationship between action(~A) and state(~A)" cnt (- cnt ccnt))
+                (setq ccnt (+ ccnt 1))
+                )
+               (t
+                (let (tmp-cl)
+                  (dolist (cl check-lst)
+                    (when cl (setq tmp-cl (append tmp-cl (list (caddr cl))))))
+                  (setq check-lst tmp-cl))
+                ;; (ros::ros-info "tmp-cl:~A" check-lst)
+                (let (tmp-cl)
+                  (dolist (cl check-lst)
+                    (setq tmp-cl
+                          (append
+                           tmp-cl
+                           (mapcar #'(lambda(x)
+                                       (let ((pos (position x (car param))))
+                                         (if pos
+                                             (elt (cadr param) pos)
+                                           x)))
+                                   cl))))
+                  (setq check-lst tmp-cl)
+                  )
+                (warning-message 5 "[relationship]~%")
+                (warning-message 5  "action(~A):~A~%" cnt ac)
+                (warning-message 5 "|~%")
+                (warning-message 5 "state(~A):~A~%" (- cnt ccnt) (elt (send self :states) (- cnt ccnt)))
+                (warning-message 5 "condition:~A~%" check-lst)
+                (when (equal ccnt 0) (ros::ros-warn "plan error!!"))
+                (warning-message 4 "~%")
+                (warning-message 4 "~%")
+                (warning-message 4 "~%")
+                (warning-message 4 "~%")
+                (return)
+                )))))
+        (setq cnt (+ cnt 1))
+        )
+      ))
+
+
+
   (:check-condition (st act)
     (let ((action (find-if #'(lambda (x)
                                (equal
@@ -460,6 +557,7 @@
                                  (car act))
                                 (intern (string-upcase (send x :name))))) (send domain :action)))
           param pcond)
+      (ros::ros-info "[check-condition] action:~A" action)
       (unless action
         (return-from :check-condition nil))
       (cond
@@ -477,6 +575,14 @@
       (setq pcond (send action :precondition))
       (cond
        ((send self :use-durative-action)
+        (ros::ros-info "[check-condition] check-state result:~A"
+                       (mapcar #'(lambda (p)
+                                   (cond
+                                    ((or (member (cadr act) p) (member 'over p))
+                                     (send self :check-state st p param))
+                                    (t
+                                     t)))
+                               pcond))
         (null (some #'null
                     (mapcar #'(lambda (p)
                                 (cond
@@ -493,6 +599,7 @@
         ))
       ))
   (:check-state (st s param)
+    (warning-message 4 "[check-state] s:~A st:~A param:~A~%" s st param)
     (let ((ss
            (cond
             ((send self :use-durative-action)
@@ -501,7 +608,15 @@
                            (if pos
                                (elt (cadr param) pos)
                              x)))
-                     (caddr s))
+
+
+                     (cond
+                      ((or (member 'over s) (member 'start s) (member 'end s))
+                       (ros::ros-info "use-caddr")
+                       (caddr s))
+                      (t
+                       (ros::ros-info "use-s")
+                       s)))
              )
             (t
              (mapcar #'(lambda(x)
@@ -552,9 +667,12 @@
         ('=
          (equal (cadr ss) (caddr ss)))
         (t
-         (if (member ss st :test #'equal)
-             t
-           nil))
+         (warning-message 4 "equal:~A ss:~A st:~A~%" (not (null (member ss st :test #'equal))) ss st)
+         (cond
+          ((member ss st :test #'equal)
+           t)
+          (t
+           nil)))
         )
       ))
   (:apply-action (st act)
@@ -567,6 +685,7 @@
                                      (car act))
                                     (intern (string-upcase (send x :name))))) (send domain :action)))
               param effect (tmp-st st))
+          (ros::ros-info "[apply-action] st:~A act:~A" st act)
           (unless action
             (return-from :apply-action nil))
           (cond
