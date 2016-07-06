@@ -341,6 +341,7 @@
           actions
           objects
           tl-actions
+          relationship-lst
           use-durative-action
           )
   )
@@ -394,6 +395,8 @@
     objects)
   (:states (&rest args)
     (forward-message-to states args))
+  (:relationship ()
+    relationship-lst)
   (:add-constants ()
     (let (obj (cnst (send domain :constants)) sym)
       (when cnst
@@ -454,11 +457,11 @@
     ;;TODO
     )
 
-  (:get-relationship ()
+  (:generate-relationship ()
     (let ((cnt 0) pcond action param st)
       (unless (send self :use-durative-action)
-        (return-from :get-relationship nil))
-;      (ros::ros-info "[get-relationship] [num] actions:~A states:~A" (length tl-actions) (length (send self :states)))
+        (return-from :generate-relationship nil))
+;      (ros::ros-info "[generate-relationship] [num] actions:~A states:~A" (length tl-actions) (length (send self :states)))
       (dolist (ac tl-actions)
         ;; (ros::ros-info "ac:~A" ac)
         (when (member 'start ac)
@@ -544,11 +547,15 @@
                 (warning-message 5 "[relationship]~%")
                 (warning-message 5  "action(~A):~A~%" cnt ac)
                 (warning-message 5 "state(~A):~A~%" (- cnt ccnt) (elt (send self :states) (- cnt ccnt)))
-                (warning-message 5 "condition:~A~%" check-lst)
+                (warning-message 5 "related-action(~A):~A~%" (- cnt ccnt) (elt (send self :timeline-actions) (- cnt ccnt)))
+                (warning-message 5 "state(~A):~A~%" (+ (- cnt ccnt) 1) (elt (send self :states) (+ (- cnt ccnt) 1)))
+                (warning-message 5 "condition:~A~%" (car check-lst))
                 (warning-message 5 "~%")
+                (setq relationship-lst (append relationship-lst (list (list ac (elt (send self :timeline-actions) (- cnt ccnt)) (car check-lst)))))
                 (when (equal ccnt 0)
-                  (ros::ros-warn "LPG plan error!! action(~A)[~A]'s precondition doesn't match state(~A)[~A]. Error state is ~A." cnt ac (- cnt ccnt) (elt (send self :states) (- cnt ccnt)) check-lst)
-                  (return-from :get-relationship 'error)
+                  (ros::ros-warn "LPG plan error!! action(~A)[~A]'s precondition doesn't match state(~A)[~A]. Error state is ~A." cnt ac (- cnt ccnt) (elt (send self :states) (- cnt ccnt)) (car check-lst))
+                  (setq relationship-lst nil)
+                  (return-from :generate-relationship 'error)
                   )
                 ;; (warning-message 4 "~%")
                 ;; (warning-message 4 "~%")
