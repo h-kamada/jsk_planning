@@ -546,7 +546,10 @@
                 (warning-message 5 "state(~A):~A~%" (- cnt ccnt) (elt (send self :states) (- cnt ccnt)))
                 (warning-message 5 "condition:~A~%" check-lst)
                 (warning-message 5 "~%")
-                (when (equal ccnt 0) (ros::ros-warn "plan error!! action(~A):~A state(~A):~A condition:~A" cnt ac (- cnt ccnt) (- cnt ccnt) (elt (send self :states) (- cnt ccnt)) check-lst))
+                (when (equal ccnt 0)
+                  (ros::ros-warn "LPG plan error!! action(~A)[~A]'s precondition doesn't match state(~A)[~A]. Error state is ~A." cnt ac (- cnt ccnt) (elt (send self :states) (- cnt ccnt)) check-lst)
+                  (return-from :get-relationship 'error)
+                  )
                 ;; (warning-message 4 "~%")
                 ;; (warning-message 4 "~%")
                 ;; (warning-message 4 "~%")
@@ -555,6 +558,7 @@
                 )))))
         (setq cnt (+ cnt 1))
         )
+      t
       ))
 
 
@@ -722,8 +726,88 @@
               (setq tmp-st (send self :change-state tmp-st e param))
               )))
           tmp-st)
-      nil)
+      (progn (ros::ros-info "[apply-action] return nil")
+             (send self :dummy-check-condition st act)
+             (return-from :apply-action nil)
+             ))
     )
+
+  (:dummy-check-condition (st act)
+    (let ((action (find-if #'(lambda (x)
+                               (equal
+                                (or
+                                 (and (send self :use-durative-action)
+                                      (caaddr act))
+                                 (car act))
+                                (intern (string-upcase (send x :name))))) (send domain :action)))
+          param pcond)
+      (ros::ros-info "[dummy-check-condition] st:~A" st)
+      (ros::ros-info "[dummy-check-condition] act:~A" act)
+      (let (ssst)
+        (dolist (sst (send self :states))
+          (when (equal st sst)
+            (ros::ros-info "[dummy-check-condition] prev-st:~A" ssst))
+          (setq ssst sst)
+          ))
+      (let (ttac)
+        (dolist (tac (send self :timeline-actions))
+          (when (equal act tac)
+            (ros::ros-info "[dummy-check-condition] prev-act:~A" ttac))
+          (setq ttac tac)
+          ))
+
+      (unless action
+        (return-from :check-condition nil))
+      (cond
+       ((send self :use-durative-action)
+        (let (tmp-arg (cnt 0))
+          (dolist (para (car (send action :parameters)))
+            (when (eq 0 (mod cnt 3))
+              (setq tmp-arg (append tmp-arg (list para))))
+            (setq cnt (+ cnt 1))
+            )
+          (setq param (list tmp-arg (cdaddr act)))
+          ))
+       (t
+        (setq param (list (flatten (mapcar #'(lambda(x) (butlast x 1)) (send action :parameters))) (cdr act)))))
+      (setq pcond (send action :precondition))
+      (cond
+       ((send self :use-durative-action)
+        (ros::ros-info "[dummy-check-condition] pcond:~A" pcond)
+        (let (res (ppcond pcond))
+          (setq res (mapcar #'(lambda (p)
+                                (cond
+                                 ((or (member (cadr act) p) (member 'over p))
+                                  (send self :check-state st p param))
+                                 (t
+                                  t)))
+                            pcond))
+          (dolist (rr res)
+            (cond
+             (rr
+              (warning-message 3 "~A~%" (pop ppcond)))
+             (t
+              (warning-message 1 "~A~%" (pop ppcond)))
+             ))
+          (ros::ros-info "[dummy-check-condition] result:~A" res)
+          )
+        (null (some #'null
+                    (mapcar #'(lambda (p)
+                                (cond
+                                 ((or (member (cadr act) p) (member 'over p))
+                                  (send self :check-state st p param))
+                                 (t
+                                  t)))
+                            pcond))))
+       (t
+        (null (some #'null
+                    (mapcar #'(lambda (p)
+                                (send self :check-state st p param))
+                            pcond)))
+        ))
+      ))
+
+
   (:change-state (st e param)
     (let ((ee
            (cond
