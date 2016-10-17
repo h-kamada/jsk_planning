@@ -227,17 +227,28 @@
 (defun demo ()
   (setq *result* (solve-pddl-planning *domain* *problem*))
   (cond
-   ((equal (send (cdr (assoc :state *result*)) :generate-relationship) 'error)
+   ((equal (send (cdr (assoc :state *result*)) :generate-single-relationship) 'error)
     (ros::ros-error "LPG planner error!"))
    (t
-    (setq *graph* (make-simple-graph *result*))
-    (write-to-dot *graph*)
+    (send (cdr (assoc :state *result*)) :generate-all-relationship)
+    (setq *graph* (make-relation-graph *result* :single))
+    (setq *all-graph* (make-relation-graph *result* :all))
+    (write-to-dot *graph* "actionrelation.dot")
+    (write-to-dot *all-graph* "allrelation.dot")
     (unix:system (format nil "dot ~A -Tpdf -o ~A" "actionrelation.dot" "actionrelation.pdf"))
-    (piped-fork "gnome-open actionrelation.pdf"))
-    ))
+    (unix:system (format nil "dot ~A -Tpdf -o ~A" "allrelation.dot" "allrelation.pdf"))
+    (piped-fork "gnome-open actionrelation.pdf")
+    (piped-fork "gnome-open allrelation.pdf")
+    )))
 
-(defun make-simple-graph (result) ;; not use start and end.
-  (let ((relation-lst (send (cdr (assoc :state result)) :relationship))
+(defun make-relation-graph (result reltype) ;; not use start and end.
+  (let ((relation-lst
+         (cond
+          ((eq reltype :single)
+           (send (cdr (assoc :state result)) :relationship))
+          ((eq reltype :all)
+           (send (cdr (assoc :state result)) :all-relationship)
+           )))
         (initial-node (instance arced-node :init :name (format nil "INITIAL")))
         (start-actions
          (remove-if #'null
@@ -299,7 +310,7 @@
     gr
     ))
 
-(defun write-to-dot (gr)
+(defun write-to-dot (gr filename)
   (let ((node-alist
          (mapcar #'(lambda (n)
                      (cons n (string (gensym))))
@@ -308,7 +319,7 @@
               (n)
               (cdr (assoc n node-alist))))
       (with-open-file
-       (f "actionrelation.dot" :direction :output)
+       (f filename :direction :output)
        (format f "digraph ~A {~%" "actionrelation")
        (dolist (nd (send gr :nodes))
          (format f "   ")
@@ -328,6 +339,6 @@
          t)))))
 
 
-
-
+(warn "~%")
+(warn ";(demo)~%")
 (demo)
