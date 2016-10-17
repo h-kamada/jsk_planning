@@ -35,6 +35,7 @@ class PDDLPlannerActionServer(object):
         rospy.loginfo("domain_path => %s" % domain_path)
         result = self.call_pddl_planner(problem_path, domain_path)
         if result:
+            rospy.loginfo("result:%s" % result)
             if self._planner_name == "lpg":
                 self._result.sequence = [PDDLStep(action = x.split(' ')[1].lstrip("\("),
                                                   args = re.search("\([^\)]+\)", x).group(0).lstrip("\(").rstrip("\)").split(' ')[1:],
@@ -143,6 +144,18 @@ class PDDLPlannerActionServer(object):
             rospy.loginfo ("lpg")
             output = commands.getoutput("rosrun lpg_planner lpg-1.2 %s -o %s -f %s" % (self._search_option, domain, problem))
             return self.parse_pddl_result_lpg(output)
+
+        #temporary############################################
+        elif self._planner_name == "lpg-1.0":
+            rospy.loginfo ("lpg-1.0")
+            output = commands.getoutput("rosrun lpg_planner lpg-1.0 %s -o %s -f %s" % (self._search_option, domain, problem))
+            return self.parse_pddl_result_lpg(output)
+
+        elif self._planner_name == "lpg-td":
+            rospy.loginfo ("lpg-td-1.0")
+            output = commands.getoutput("rosrun lpg_planner lpg-td-1.0 %s -o %s -f %s" % (self._search_option, domain, problem))
+            return self.parse_pddl_result_lpg(output)
+        #temporary############################################
 
         else:
             rospy.logfatal("set invalid planner: %s !" % self._planner_name)

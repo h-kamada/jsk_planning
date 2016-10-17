@@ -1,11 +1,14 @@
 <launch>
+  <arg name="planner" value="lpg" />
   <node pkg="pddl_planner"
         type="pddl.py"
         name="pddl_planner"
         output="screen">
     <param name="pddl_planner"
-           value="lpg" />
+           value="$(arg planner)" />
     <param name="pddl_search_option"
-           value="-n 3 -out result -restarts 8 -nobestfirst -search_steps 500 -i_choice 2" />
+           value="-n 1 -out result -same_objects" />
+    <!-- <param name="pddl_search_option" -->
+    <!--        value="-n 3 -out result -restarts 8 -nobestfirst -search_steps 500 -i_choice 2" /> -->
   </node>
 </launch>
