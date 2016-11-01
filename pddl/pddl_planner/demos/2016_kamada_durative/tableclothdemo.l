@@ -30,7 +30,9 @@
                              (grasping ?robot - robot ?obj - object)
                              (working ?robot -robot)
                              (cloth-half-grabbed)
+                             (hands-full ?robot - robot)
                              (cloth-full-grabbed)
+                             (object-is-around ?obj - object ?pos - position)
                              (unstable ?cloth - object) ; avoiding placing obj on TABLECLOTH before setting
                              ))
 
@@ -39,7 +41,7 @@
        (instance pddl-action :init
                  :use-durative-action t
                  :name "pick"
-                 ;; ?robot pick ?obj from ?underobj
+                 ;; ?robot pick ?obj from ?underobj at ?pos
                  :parameters '((?robot - robot ?obj - obj ?underobj - obj ?pos - position))
                  :duration '((= ?duration 10))
                  :precondition '(
@@ -47,36 +49,42 @@
                                  (over all (at-robot ?robot ?pos))
                                  (at start (not (grasping ?robot ?obj)))
                                  (at start (on ?underobj ?obj))
+                                 (over all (object-is-around ?underobj ?pos))
+                                 (at start (not (hands-full ?robot)))
                                  )
                  :effect '(
                            (at start (working ?robot))
                            (at end (not (working ?robot)))
                            (at end (grasping ?robot ?obj))
+                           (at end (hands-full ?robot))
                            (at end (not (on ?underobj ?obj)))
                            ))
        (instance pddl-action :init
                  :use-durative-action t
                  :name "place"
-                 ;; ?robot pick ?obj from ?underobj
+                 ;; ?robot place ?obj on ?underobj at ?pos
                  :parameters '((?robot - robot ?obj - obj ?underobj - object ?pos - position)) ;; underobjをobject種とすることで、TABLECLOTHも含めることが出来る
                  :duration '((= ?duration 10))
                  :precondition '(
                                  (at start (not (working ?robot)))
+                                 (at start (hands-full ?robot))
                                  (over all (at-robot ?robot ?pos))
                                  (over all (not (unstable ?underobj)))
                                  (at start (grasping ?robot ?obj))
                                  (at start (not (on ?underobj ?obj)))
+                                 (over all (object-is-around ?underobj ?pos))
                                  )
                  :effect '(
                            (at start (working ?robot))
                            (at end (not (working ?robot)))
                            (at end (not (grasping ?robot ?obj)))
+                           (at end (not (hands-full ?robot)))
                            (at end (on ?underobj ?obj))
                            ))
        (instance pddl-action :init
                  :use-durative-action t
                  :name "move"
-                 ;; ?robot move to TABLE
+                 ;; ?robot move from ?from to ?to
                  :parameters '((?robot - robot ?from - position ?to - position))
                  :duration '((= ?duration 1))
                  :precondition '(
@@ -87,12 +95,13 @@
                  :effect '(
                            (at start (working ?robot))
                            (at end (not (working ?robot)))
+                           (at start (not (at-robot ?robot ?from)))
                            (at end (at-robot ?robot ?to))
                            ))
        (instance pddl-action :init
                  :use-durative-action t
                  :name "grab_TABLECLOTH"
-                 ;; ?robot move to TABLE
+                 ;; ?robot grab tablecloth
                  :parameters '((?robot - robot))
                  :duration '((= ?duration 20))
                  :precondition '(
@@ -106,11 +115,12 @@
                            (at end (not (working ?robot)))
                            (at end (cloth-half-grabbed))
                            (at end (grasping ?robot TABLECLOTH))
+                           (at end (hands-full ?robot))
                            ))
        (instance pddl-action :init
                  :use-durative-action t
                  :name "grab_the_other_side_TABLECLOTH"
-                 ;; ?robot move to TABLE
+                 ;; ?robotB grab the other side of tablecloth
                  :parameters '((?robotB - robot ?robotA - robot))
                  :duration '((= ?duration 20))
                  :precondition '(
@@ -131,11 +141,12 @@
                            (at end (grasping ?robotB TABLECLOTH))
                            (at end (not (cloth-half-grabbed)))
                            (at end (cloth-full-grabbed))
+                           (at end (hands-full ?robotB))
                            ))
        (instance pddl-action :init
                  :use-durative-action t
                  :name "set_TABLECLOTH"
-                 ;; ?robot move to TABLE
+                 ;; ?robotA and ?robotB set tablecloth
                  :parameters '((?robotA - robot ?robotB - robot))
                  :duration '((= ?duration 20))
                  :precondition '(
@@ -155,7 +166,10 @@
                            (at end (not (working ?robotB)))
                            (at end (not (cloth-full-grabbed)))
                            (at end (on TABLE TABLECLOTH))
+                           (at end (not (hands-full ?robotA)))
+                           (at end (not (hands-full ?robotB)))
                            (at end (not (unstable TABLECLOTH)))
+                           (at end (object-is-around TABLECLOTH TABLEFRONT))
                            ))
        ))
 (dolist (ac action-lst)
@@ -167,12 +181,12 @@
         (at-robot robot2 init_pos)
         (on kitchen_table cup)
         (on kitchen_table dish)
+        (object-is-around kitchen_table kitchen_table_front)
         (unstable TABLECLOTH)
         ))
 
 (send *problem* :goal-condition
       '(
-;        (cloth-full-grabbed)
         (on TABLE TABLECLOTH)
         (on TABLECLOTH cup)
         (on TABLECLOTH dish)
