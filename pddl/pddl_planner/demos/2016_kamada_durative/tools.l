@@ -164,6 +164,70 @@
          (format f "}~%")
          t)))))
 
+
+(setq *done-nodes* nil)
+(setq *executing-nodes* nil)
+(setq *next-nodes* nil)
+(setq *arc-lst* nil)
+
+(defun search-parents (node)
+  (let (parent)
+    (dolist (arc *arc-lst*)
+      (when (equal node (cadr arc))
+        (print arc)
+        (print (cadr arc))
+        (print (car arc))
+        (print "")
+        (setq parent (append parent (list (car arc))))))
+    (return-from search-parents parent)))
+
+(dolist (arc *arc-lst*)
+  (print arc))
+(dolist (nd (send *graph* :nodes))
+  (print nd)
+  (ros::ros-info "~A" (search-parents nd))
+  (print "")
+  )
+
+(dolist (nd (send *graph* :nodes))
+  (when (equal (send nd :name) "21.0 (grab_the_other_side_tablecloth robot1 robot2)")
+    (setq b nd)))
+
+(defun set-arc-lst (graph)
+  (dolist (nd (send graph :nodes))
+    (print "")
+    (print nd)
+    (ros::ros-info "~A"(send nd :arc-list))
+    (dolist (nei-action (send nd :neighbor-action-alist))
+;      (print nei-action)
+      (setq *arc-lst* (append *arc-lst* (list (list nd (cdr nei-action)))))
+      )))
+
+(defun exec (gr)
+  (let ()
+    (setq gr *graph*)
+    ;; set INITIAL to *executing-nodes*
+    (dolist (nd (send gr :nodes))
+      (when (equal (send nd :name) "INITIAL")
+        (setq *executing-nodes* nd)
+        ))
+
+    (while t
+      ;; check whether next-nodes's lock is cleared (exec)
+      (
+      ;; set next-nodes
+      (dolist (en *executing-nodes*)
+        (dolist (nn (send en :neighbor-action-alist))
+          (when (null (member nn *next-nodes*))
+            (setq *next-nodes* (append *next-nodes* (list nn))))
+          
+      (dolist (nd (send gr :nodes))
+        (ros::ros-info "nd:~A nei:~A" nd (send nd :neighbor-action-alist))
+      
+
+  )))))
+
+
 (defun demo (&key no-output)
   (setq *result* (solve-pddl-planning *domain* *problem*))
   (cond
