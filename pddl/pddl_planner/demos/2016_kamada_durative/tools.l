@@ -166,11 +166,13 @@
 
 (defun replanning (from to replanning-initial-action)
   (let (states find-flag cnt tmp-cnt new-state old-pddl-state new-pddl-state merging-actions
-               merging-pddl-state pddl-initial-condition)
+               merging-pddl-state pddl-initial-condition error-time)
     (setq pddl-initial-condition (send *problem* :initial-condition))
     (setq old-pddl-state (cdr (assoc :state *result*)))
     (setq states (send old-pddl-state :states))
     (ros::ros-info "states: ~A" states)
+
+    ;; 異常発生箇所をたどる
     (setq find-flag nil)
     (setq cnt 0)
     (dolist (st states)
@@ -187,11 +189,18 @@
         )
       (incf cnt)
       )
-
     (setq *states* states)
     (ros::ros-info "cnt: ~A" tmp-cnt)
     (ros::ros-info "key state: ~A" (nth tmp-cnt states))
+    ;; error-time is used for replanning-action time
+    (setq error-time (car (nth (- tmp-cnt 1) (send old-pddl-state :timeline-actions))))
+    (ros::ros-info "error-time:~A" error-time)
     ;; (ros::ros-info "timeline-actions: ~A" (send (cdr (assoc :state *result*)) :timeline-actions))
+
+
+    ;; the detected error condition(from) appeared in cnt condition(key-state)
+    ;; "from"conditionから異常を発見したactionまでの流れを、"to"conditionをそこに入れた時にどうなるかを
+    ;; pddl-stateを用いて追っていく
     (dolist (st (nth tmp-cnt states))
       (cond
        ((equal st from)
@@ -215,15 +224,16 @@
     (ros::ros-info "states: ~A" (send new-pddl-state :states))
     (ros::ros-info "actions: ~A" (send new-pddl-state :actions))
     (ros::ros-info "last state: ~A" (car (last (send new-pddl-state :states))))
+    ;; last-state が、異常発見したactionまでを"to"conditionを使って再現した際の、
+    ;; 異常発見actionまで実行した結果のstate状態を表している
 
-    ;; (setq merging-pddl-state
-    ;;       (instance pddl-state :init :domain *domain* :objects (send *problem* :objects)
-    ;;                 :initial-state (last (send new-pddl-state :states))))
 
-    ;; merging
+    ;; last-stateを初期状態としてpddlを解かせてその結果を受け取る
     (send *problem* :initial-condition (car (last (send new-pddl-state :states))))
     (setq *replan-result* (solve-pddl-planning *domain* *problem*))
 
+
+    ;; 異常検知までのactionをmerging-actionsとして定義
     (setq cnt 0)
     (while t
       (setq merging-actions
@@ -235,6 +245,11 @@
       (incf cnt)
       )
     (ros::ros-info "merging-actions: ~A" merging-actions)
+
+
+
+    ;; 異常発生後のactionについて、last-stateを初期状態として解かせた結果を元に
+    ;; 1sだけずらしながらtmp-planとして定義
     (setq tmp-plan nil)
     (dolist (ac (cdr (assoc :plan *replan-result*)))
       (setq tmp-plan (append tmp-plan (list (list (+ (+ (car replanning-initial-action) (car ac)) 1)
@@ -243,22 +258,32 @@
                                                   ))))
       )
     (ros::ros-info "tmp-plan: ~A" tmp-plan)
+
+
+
+    ;; replan actionを定義
+    ;; replanを含め、出現するaction全てを含む新しいpddl-state インスタンスを作成
     (send *domain* :add :action
           (instance pddl-action :init
                     :use-durative-action t
                     :name "replanning-call"
                     :parameters '(())
-                    :duration '((= ?duration 1))
+                    :duration '((= ?duration 0))
                     :precondition `((at start ,from))
-                    :effect `((at end ,to))))
+                    :effect `((at start ,to))))
     (setq *merging-pddl-state*
           (instance pddl-state :init :domain *domain* :initial-state pddl-initial-condition
                     :objects (send *problem* :objects)))
-    (setq *tt* (append merging-actions
-                       (list `(,(car replanning-initial-action) start (replanning-call)))
-                       (list `(,(car replanning-initial-action) end (replanning-call)))
-                       tmp-plan
-                       ))
+    (setq *tt* (append  merging-actions
+                        (list (list error-time 'start '(replanning-call)))
+                        (list (list error-time  'end '(replanning-call)))
+                        tmp-plan
+                        ))
+    ;; (setq *tt* (append merging-actions
+    ;;                    (list `(,(car replanning-initial-action) start (replanning-call)))
+    ;;                    (list `(,(car replanning-initial-action) end (replanning-call)))
+    ;;                    tmp-plan
+    ;;                    ))
     (ros::ros-info "tt:~A" *tt*)
     (setq *tt* (set-duration-to-plan *tt*))
     (ros::ros-info "hoe")
@@ -266,6 +291,10 @@
     (send *merging-pddl-state* :generate-states)
     (send *merging-pddl-state* :generate-single-relationship)
     (send *merging-pddl-state* :generate-all-relationship)
+
+
+
+    ;; 結果を受け取ってgraph化
     (setq *merging-result* (list (cons :plan (send *merging-pddl-state* :timeline-actions))))
     (push (cons :state *merging-pddl-state*) *merging-result*)
     (setq *merging-graph* (make-relation-graph *merging-result*))
@@ -292,6 +321,7 @@
 
 (defun set-duration-to-plan (plan)
   (let (new-plan tmp-plan)
+    (ros::ros-info "plan:~A" plan)
     (dolist (pp plan)
       (when (equal (cadr pp) 'start)
         (ros::ros-info "pp:~A" pp)
