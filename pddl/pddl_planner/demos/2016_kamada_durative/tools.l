@@ -68,7 +68,7 @@
     gr
     ))
 
-(defun write-to-dot (gr filename &key distinguish-robot)
+(defun write-to-dot (gr filename &key distinguish-robot (robot1-name "robot1") (robot2-name "robot2"))
   (let ((node-alist
          (mapcar #'(lambda (n)
                      (cons n (string (gensym))))
@@ -86,14 +86,14 @@
        (when distinguish-robot
          ;; (format f "subgraph cluster_0 {~%label = \"robot 1\";~%color=blue;~%")
          (dolist (nd (send gr :nodes))
-           (when (substringp "robot1" (send nd :name))
+           (when (substringp robot1-name (send nd :name))
              ;; (format f "~A;~%" (graphviz-node-name nd))
              (setq robot1-node-lst (append robot1-node-lst (list (graphviz-node-name nd))))
              ))
          ;; (format f "}~%")
          ;; (format f "subgraph cluster_1 {~%label = \"robot 2\";~%color=blue;~%")
          (dolist (nd (send gr :nodes))
-           (when (substringp "robot2" (send nd :name))
+           (when (substringp robot2-name (send nd :name))
              ;; (format f "~A;~%" (graphviz-node-name nd))
              (setq robot2-node-lst (append robot2-node-lst (list (graphviz-node-name nd))))
              ))
@@ -164,7 +164,175 @@
          (format f "}~%")
          t)))))
 
-(defun demo (&key no-output)
+(defun replanning (from to replanning-initial-action)
+  (let (states find-flag cnt tmp-cnt new-state old-pddl-state new-pddl-state merging-actions
+               merging-pddl-state pddl-initial-condition)
+    (setq pddl-initial-condition (send *problem* :initial-condition))
+    (setq old-pddl-state (cdr (assoc :state *result*)))
+    (setq states (send old-pddl-state :states))
+    (ros::ros-info "states: ~A" states)
+    (setq find-flag nil)
+    (setq cnt 0)
+    (dolist (st states)
+      (dolist (sst st)
+        (setq *s* sst)
+        (ros::ros-info "sst: ~A" sst)
+        (ros::ros-info "from: ~A" from)
+        (ros::ros-info "equal: ~A" (equal from sst))
+        (when (and (equal from sst) (null find-flag))
+          (setq find-flag t)
+          (setq tmp-cnt cnt)
+          (ros::ros-info "cnt: ~A" cnt)
+          )
+        )
+      (incf cnt)
+      )
+
+    (setq *states* states)
+    (ros::ros-info "cnt: ~A" tmp-cnt)
+    (ros::ros-info "key state: ~A" (nth tmp-cnt states))
+    ;; (ros::ros-info "timeline-actions: ~A" (send (cdr (assoc :state *result*)) :timeline-actions))
+    (dolist (st (nth tmp-cnt states))
+      (cond
+       ((equal st from)
+        (setq new-state (append new-state (list to))))
+       (t
+        (setq new-state (append new-state (list st))))))
+    (ros::ros-info "new-state: ~A" new-state)
+    (setq new-state-cnt tmp-cnt)
+    (setq new-pddl-state
+          (instance pddl-state :init :domain *domain* :initial-state new-state
+                    :objects (send *problem* :objects)))
+    (while t
+      (ros::ros-info "cnt: ~A appling-action: ~A" new-state-cnt
+                     (nth new-state-cnt (send old-pddl-state :timeline-actions)))
+      (send new-pddl-state :add-action (nth new-state-cnt (send old-pddl-state :timeline-actions)))
+      (when (equal (nth new-state-cnt (send old-pddl-state :timeline-actions)) replanning-initial-action)
+        (return))
+      (incf new-state-cnt)
+      (unix:sleep 1)
+      )
+    (ros::ros-info "states: ~A" (send new-pddl-state :states))
+    (ros::ros-info "actions: ~A" (send new-pddl-state :actions))
+    (ros::ros-info "last state: ~A" (car (last (send new-pddl-state :states))))
+
+    ;; (setq merging-pddl-state
+    ;;       (instance pddl-state :init :domain *domain* :objects (send *problem* :objects)
+    ;;                 :initial-state (last (send new-pddl-state :states))))
+
+    ;; merging
+    (send *problem* :initial-condition (car (last (send new-pddl-state :states))))
+    (setq *replan-result* (solve-pddl-planning *domain* *problem*))
+
+    (setq cnt 0)
+    (while t
+      (setq merging-actions
+            (append merging-actions
+                    (list (nth cnt (send old-pddl-state :timeline-actions)))))
+      (when (equal (nth cnt (send old-pddl-state :timeline-actions)) replanning-initial-action)
+        (return))
+      (ros::ros-info "a:~A b:~A" (nth cnt (send old-pddl-state :timeline-actions)) replanning-initial-action)
+      (incf cnt)
+      )
+    (ros::ros-info "merging-actions: ~A" merging-actions)
+    (setq tmp-plan nil)
+    (dolist (ac (cdr (assoc :plan *replan-result*)))
+      (setq tmp-plan (append tmp-plan (list (list (+ (+ (car replanning-initial-action) (car ac)) 1)
+                                                  (cadr ac)
+                                                  (caddr ac)
+                                                  ))))
+      )
+    (ros::ros-info "tmp-plan: ~A" tmp-plan)
+    (send *domain* :add :action
+          (instance pddl-action :init
+                    :use-durative-action t
+                    :name "replanning-call"
+                    :parameters '(())
+                    :duration '((= ?duration 1))
+                    :precondition `((at start ,from))
+                    :effect `((at end ,to))))
+    (setq *merging-pddl-state*
+          (instance pddl-state :init :domain *domain* :initial-state pddl-initial-condition
+                    :objects (send *problem* :objects)))
+    (setq *tt* (append merging-actions
+                       (list `(,(car replanning-initial-action) start (replanning-call)))
+                       (list `(,(car replanning-initial-action) end (replanning-call)))
+                       tmp-plan
+                       ))
+    (ros::ros-info "tt:~A" *tt*)
+    (setq *tt* (set-duration-to-plan *tt*))
+    (ros::ros-info "hoe")
+    (send *merging-pddl-state* :actions *tt*)
+    (send *merging-pddl-state* :generate-states)
+    (send *merging-pddl-state* :generate-single-relationship)
+    (send *merging-pddl-state* :generate-all-relationship)
+    (setq *merging-result* (list (cons :plan (send *merging-pddl-state* :timeline-actions))))
+    (push (cons :state *merging-pddl-state*) *merging-result*)
+    (setq *merging-graph* (make-relation-graph *merging-result*))
+    (setq *merging-all-graph* (make-relation-graph *merging-result* :verbose t))
+    (write-to-dot *merging-graph* ".merged_normal.dot")
+    (write-to-dot *merging-graph* ".merged_normal_separated.dot"
+                  :distinguish-robot t :robot1-name "pr1012" :robot2-name "pr1040")
+    (write-to-dot *merging-all-graph* ".merged_verbose.dot")
+    (write-to-dot *merging-all-graph* ".merged_verbose_separated.dot"
+                  :distinguish-robot t :robot1-name "pr1012" :robot2-name "pr1040")
+    (write-to-dot *merging-all-graph* ".merged_inter_robot_relationship.dot"
+                  :distinguish-robot :inter-robot-only  :robot1-name "pr1012" :robot2-name "pr1040")
+    (unix:system (format nil "dot ~A -Tpdf -o ~A" ".merged_normal.dot" ".merged_normal.pdf"))
+    (unix:system (format nil "dot ~A -Tpdf -o ~A" ".merged_normal_separated.dot" ".merged_normal_separated.pdf"))
+    (unix:system (format nil "dot ~A -Tpdf -o ~A" ".merged_verbose.dot" ".merged_verbose.pdf"))
+    (unix:system (format nil "dot ~A -Tpdf -o ~A" ".merged_verbose_separated.dot" ".merged_verbose_separated.pdf"))
+    (unix:system (format nil "dot ~A -Tpdf -o ~A" ".merged_inter_robot_relationship.dot" ".merged_inter_robot_relationship.pdf"))
+    ;; (piped-fork "gnome-open .merged_normal.pdf")
+    ;; (piped-fork "gnome-open .merged_normal_separated.pdf")
+    (piped-fork "gnome-open .merged_verbose.pdf")
+    (piped-fork "gnome-open .merged_verbose_separated.pdf")
+    (piped-fork "gnome-open .merged_inter_robot_relationship.pdf")
+    ))
+
+(defun set-duration-to-plan (plan)
+  (let (new-plan tmp-plan)
+    (dolist (pp plan)
+      (when (equal (cadr pp) 'start)
+        (ros::ros-info "pp:~A" pp)
+        (setq action (find-if #'(lambda (x)
+                                  (equal (caaddr pp) (read-from-string (send x :name))))
+                              (send *domain* :action)))
+        (ros::ros-info "action:~A" action)
+        (setq duration (car (cddar (send action :duration))))
+        (ros::ros-info "duration:~A" duration)
+        (setq tmp-plan (list (flatten (list (car pp) duration (caddr pp)))))
+        (setq new-plan (append new-plan tmp-plan))
+        )
+      )
+    (ros::ros-info "new-plan: ~A" new-plan)
+    new-plan
+    ))
+;; (20.0 10.0 set-tablecloth pr1012 pr1040))
+
+
+(defun re ()
+  (demo :robot1-name "pr1012" :robot2-name "pr1040")
+  (unix:sleep 2)
+  (ros::ros-info "hoge:~A" (caddr (cadr (assoc :plan *result*))))
+  (cond
+   ((member 'pr1012 (caddr (cadr (assoc :plan *result*))))
+    (ros::ros-info "Starting from pr1012")
+    (replanning '(full-grasp-tablecloth pr1012) '(not (full-grasp-tablecloth pr1012)) '(20.0 end (grasp-tablecloth pr1040 pr1012)))
+    )
+   (t
+    (ros::ros-error "Not starting from pr1012. Retry.")
+    (re)
+    )
+   ))
+
+(defun hoge ()
+  (send *problem* :initial-condition
+        '((grasping-tablecloth pr1012) (full-grasp-tablecloth pr1040) (grasping-tablecloth pr1040)))
+  (demo)
+  )
+
+(defun demo (&key no-output (robot1-name "robot1") (robot2-name "robot2"))
   (setq *result* (solve-pddl-planning *domain* *problem*))
   (cond
    ((equal (send (cdr (assoc :state *result*)) :generate-single-relationship) 'error)
@@ -175,19 +343,24 @@
     (setq *all-graph* (make-relation-graph *result* :verbose t))
     (unless no-output
       (write-to-dot *graph* ".normal.dot")
-      (write-to-dot *graph* ".normal_separated.dot" :distinguish-robot t)
+      (write-to-dot *graph* ".normal_separated.dot"
+                    :distinguish-robot t :robot1-name robot1-name :robot2-name robot2-name)
       (write-to-dot *all-graph* ".verbose.dot")
-      (write-to-dot *all-graph* ".verbose_separated.dot" :distinguish-robot t)
-      (write-to-dot *all-graph* ".inter_robot_relationship.dot" :distinguish-robot :inter-robot-only)
+      (write-to-dot *all-graph* ".verbose_separated.dot"
+                    :distinguish-robot t :robot1-name robot1-name :robot2-name robot2-name)
+      (write-to-dot *all-graph* ".inter_robot_relationship.dot"
+                    :distinguish-robot :inter-robot-only
+                    :robot1-name robot1-name :robot2-name robot2-name)
       (unix:system (format nil "dot ~A -Tpdf -o ~A" ".normal.dot" ".normal.pdf"))
       (unix:system (format nil "dot ~A -Tpdf -o ~A" ".normal_separated.dot" ".normal_separated.pdf"))
       (unix:system (format nil "dot ~A -Tpdf -o ~A" ".verbose.dot" ".verbose.pdf"))
       (unix:system (format nil "dot ~A -Tpdf -o ~A" ".verbose_separated.dot" ".verbose_separated.pdf"))
       (unix:system (format nil "dot ~A -Tpdf -o ~A" ".inter_robot_relationship.dot" ".inter_robot_relationship.pdf"))
-      (piped-fork "gnome-open .normal.pdf")
-      (piped-fork "gnome-open .normal_separated.pdf")
+      ;; (piped-fork "gnome-open .normal.pdf")
+      ;; (piped-fork "gnome-open .normal_separated.pdf")
       (piped-fork "gnome-open .verbose.pdf")
       (piped-fork "gnome-open .verbose_separated.pdf")
       (piped-fork "gnome-open .inter_robot_relationship.pdf")
       )))
   )
+

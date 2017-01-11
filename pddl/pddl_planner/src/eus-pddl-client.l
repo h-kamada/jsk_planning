@@ -55,7 +55,7 @@
   (let* ((result (pddl-planning domain problem :client client :debug debug))
          (state (instance pddl-state :init :domain domain :initial-state (send problem :initial-condition) :actions (cdr (assoc :plan result)) :objects (send problem :objects)))
          (step-state (send state :generate-states)))
-
+    (ros::ros-info "[solve] plan:~A" (cdr (assoc :plan result)))
     (when optimize-state
       (let ((intersect-condition (reduce #'(lambda(x y) (intersection x y :test #'equal)) step-state)))
         (setq step-state (mapcar #'(lambda(x) (set-differece x intersect-condition)) step-state))))

@@ -423,10 +423,14 @@
   (:generate-timeline-actions ()
     (let (tmp-actions)
       (dolist (ac actions)
+        (ros::ros-info "[generate-timeline-actions] ac:~A" ac)
         (setq tmp-actions (append tmp-actions (list (list (car ac) 'start (cddr ac)))))
         (setq tmp-actions (append tmp-actions (list (list (+ (car ac) (cadr ac)) 'end (cddr ac)))))
         )
+      (ros::ros-info "[generate-timeline-actions] tmp-actions:~A" tmp-actions)
       (setq tmp-actions (sort tmp-actions #'<= #'car))
+      ;; sort is not working when 20 start 20 end is upside-down! Need fix
+      (ros::ros-info "[generate-timeline-actions] tmp-actions:~A" tmp-actions)
       (setq tl-actions tmp-actions)
       ))
 
@@ -437,6 +441,8 @@
     (cond
      ((send self :use-durative-action)
       (when (and states actions)
+        (ros::ros-info "[generate-states] states: ~A" states)
+        (ros::ros-info "[generate-states] actions: ~A" actions)
         (setq states (list (car states)))
         (let ((tmp-st (car states)))
           (send self :generate-timeline-actions)
@@ -602,6 +608,7 @@
                                  (car act))
                                 (intern (string-upcase (send x :name))))) (send domain :action)))
           param pcond)
+      (ros::ros-info "[check-condition] action:~A" action)
       (unless action
         (return-from :check-condition nil))
       (cond
@@ -617,6 +624,7 @@
        (t
         (setq param (list (flatten (mapcar #'(lambda(x) (butlast x 1)) (send action :parameters))) (cdr act)))))
       (setq pcond (send action :precondition))
+      (ros::ros-info "[check-condition] param:~A pcond:~A" param pcond)
       (cond
        ((send self :use-durative-action)
         (null (some #'null
@@ -706,6 +714,7 @@
         )
       ))
   (:apply-action (st act)
+    (ros::ros-info "[apply-action] st:~A act:~A" st act)
     (if (send self :check-condition st act)
         (let ((action (find-if #'(lambda (x)
                                    (equal

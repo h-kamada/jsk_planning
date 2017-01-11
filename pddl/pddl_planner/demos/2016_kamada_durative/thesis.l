@@ -5,8 +5,8 @@
 
 (setq *problem* (instance pddl-problem :init :name 'example-problem :domain 'example-domain))
 (send *problem* :objects
-      '((robot1 . robot)
-        (robot2 . robot)))
+      '((pr1012 . robot)
+        (pr1040 . robot)))
 
 (setq *domain* (instance pddl-domain :init :name 'example-domain :durative-action t))
 (send *domain* :requirements '(:typing :durative-actions :adl))
@@ -17,6 +17,7 @@
                              (grasping-tablecloth ?robot - robot)
                              (full-grasp-tablecloth ?robot - robot)
                              (tablecloth-set)
+                             (tablecloth-placed-on-shelf)
                              ))
 
 (setq action-lst
@@ -28,11 +29,13 @@
                  :parameters '((?robot - robot))
                  :duration '((= ?duration 10))
                  :precondition '(
+                                 (at start (tablecloth-placed-on-shelf))
                                  (at start (not (grasping-tablecloth ?robot)))
                                  )
                  :effect '(
                            (at end (grasping-tablecloth ?robot))
                            (at end (full-grasp-tablecloth ?robot))
+                           (at end (not (tablecloth-placed-on-shelf)))
                            ))
 
        (instance pddl-action :init
@@ -75,11 +78,12 @@
 
 (send *problem* :initial-condition
       '(
-        (not (grasping-tablecloth robot1))
-        (not (grasping-tablecloth robot2))
-        (not (full-grasp-tablecloth robot1))
-        (not (full-grasp-tablecloth robot2))
-        (not (tablecloth-set))
+        (tablecloth-placed-on-shelf)
+        ;; (not (grasping-tablecloth robot1))
+        ;; (not (grasping-tablecloth robot2))
+        ;; (not (full-grasp-tablecloth robot1))
+        ;; (not (full-grasp-tablecloth robot2))
+        ;; (not (tablecloth-set))
         ))
 
 (send *problem* :goal-condition
