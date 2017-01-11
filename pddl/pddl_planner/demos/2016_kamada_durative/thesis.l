@@ -46,11 +46,26 @@
                  :duration '((= ?duration 10))
                  :precondition '(
                                  (over all (grasping-tablecloth ?robotB))
+                                 (at start (not (grasping-tablecloth ?robotA)))
                                  (at start (not (full-grasp-tablecloth ?robotA)))
                                  )
                  :effect '(
                            (at end (full-grasp-tablecloth ?robotA))
                            (at end (grasping-tablecloth ?robotA))
+                           ))
+
+       (instance pddl-action :init
+                 :use-durative-action t
+                 :name "ungrasp-tablecloth"
+                 ;; ?robot move to TABLE
+                 :parameters '((?robot - robot))
+                 :duration '((= ?duration 10))
+                 :precondition '(
+                                 (at start (grasping-tablecloth ?robot))
+                                 )
+                 :effect '(
+                           (at end (not (full-grasp-tablecloth ?robot)))
+                           (at end (not (grasping-tablecloth ?robot)))
                            ))
 
        (instance pddl-action :init

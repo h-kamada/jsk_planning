@@ -252,7 +252,7 @@
     ;; 1sだけずらしながらtmp-planとして定義
     (setq tmp-plan nil)
     (dolist (ac (cdr (assoc :plan *replan-result*)))
-      (setq tmp-plan (append tmp-plan (list (list (+ (+ (car replanning-initial-action) (car ac)) 1)
+      (setq tmp-plan (append tmp-plan (list (list (+ (+ (car replanning-initial-action) (car ac)) 0)
                                                   (cadr ac)
                                                   (caddr ac)
                                                   ))))
@@ -340,7 +340,7 @@
     ))
 ;; (20.0 10.0 set-tablecloth pr1012 pr1040))
 
-
+(setq *retry-cnt* 0)
 (defun re ()
   (demo :robot1-name "pr1012" :robot2-name "pr1040")
   (unix:sleep 2)
@@ -352,6 +352,9 @@
     )
    (t
     (ros::ros-error "Not starting from pr1012. Retry.")
+    (setq *retry-cnt* (+ *retry-cnt* 1))
+    (when (= *retry-cnt* 4)
+      (return-from re nil))
     (re)
     )
    ))
